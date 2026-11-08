@@ -1,0 +1,10 @@
+.env
+.env.*
+!.env.example
+*.db
+*.db-shm
+*.db-wal
+bin/
+obj/
+.vs/
+*.user

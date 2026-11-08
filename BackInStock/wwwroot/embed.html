@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Back in stock alerts</title>
+<style>
+:root{--bg:transparent;--ink:#1d1b18;--mute:#6f6a60;--line:#d9d3c8;--card:#fff;--accent:#1d1b18;--accent-ink:#fff;--ok:#1f7a55;--okbg:#e3f3ec;--bad:#b3261e;--badbg:#fbe9e7}
+@media(prefers-color-scheme:dark){:root{--ink:#f1eee8;--mute:#a39d92;--line:#3a3630;--card:#1d1b18;--accent:#f1eee8;--accent-ink:#1d1b18;--ok:#58c79a;--okbg:#16322a;--bad:#ff8a80;--badbg:#3b1a17}}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+.box{padding:20px;border:1px solid var(--line);border-radius:14px;background:var(--card);max-width:460px;margin:8px auto}
+h1{font-size:19px;margin:0 0 4px}
+p.lead{margin:0 0 16px;color:var(--mute);font-size:14px}
+label{display:block;font-size:13px;font-weight:600;margin:0 0 6px}
+.field{margin-bottom:14px}
+input,select{width:100%;padding:12px 14px;font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;appearance:none}
+select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none' stroke='%23888' stroke-width='2'%3E%3Cpath d='M1 1l5 5 5-5'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center;padding-right:36px}
+input:focus,select:focus,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button{width:100%;padding:13px;font:inherit;font-weight:600;border:0;border-radius:10px;background:var(--accent);color:var(--accent-ink);cursor:pointer}
+button[disabled]{opacity:.6;cursor:default}
+.msg{margin-top:14px;padding:12px 14px;border-radius:10px;font-size:14px;display:none}
+.msg.ok{display:block;background:var(--okbg);color:var(--ok)}
+.msg.bad{display:block;background:var(--badbg);color:var(--bad)}
+.fine{margin:12px 0 0;font-size:12px;color:var(--mute)}
+.done{text-align:center;padding:12px 0}
+.done .tick{width:48px;height:48px;border-radius:50%;background:var(--okbg);color:var(--ok);display:grid;place-items:center;margin:0 auto 12px;font-size:24px}
+.done h2{margin:0 0 6px;font-size:18px}.done p{margin:0 0 14px;color:var(--mute);font-size:14px}
+.link{background:none;color:var(--ink);text-decoration:underline;width:auto;padding:0;font-weight:500}
+</style>
+</head>
+<body>
+<div class="box">
+  <form id="f" novalidate>
+    <h1>Get notified when it's back</h1>
+    <p class="lead">Leave your email and we'll send you one message when this item is available again.</p>
+    <div class="field"><label for="sku">Product</label><select id="sku" required><option value="">Loading products…</option></select></div>
+    <div class="field"><label for="email">Email</label><input id="email" type="email" autocomplete="email" inputmode="email" placeholder="you@example.com" required maxlength="254"></div>
+    <button id="go" type="submit">Notify me</button>
+    <div id="msg" class="msg" role="alert"></div>
+    <p class="fine">One email, no spam. We only use your address for this alert.</p>
+  </form>
+  <div id="done" class="done" hidden>
+    <div class="tick">✓</div>
+    <h2 id="doneTitle">You're on the list</h2>
+    <p id="doneText"></p>
+    <button class="link" id="again" type="button">Request another item</button>
+  </div>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const f = $('f'), msg = $('msg'), go = $('go');
+function show(text, kind){ msg.textContent = text; msg.className = 'msg ' + kind; }
+function resize(){ try { parent.postMessage({type:'bis-resize', height: document.documentElement.scrollHeight}, '*'); } catch(e){} }
+
+async function load(){
+  try {
+    const r = await fetch('/api/products');
+    if(!r.ok) throw 0;
+    const items = await r.json();
+    const want = new URLSearchParams(location.search).get('sku');
+    const sel = $('sku');
+    sel.innerHTML = '<option value="">Choose a product</option>';
+    items.sort((a,b)=> a.in_stock - b.in_stock || a.name.localeCompare(b.name));
+    for(const p of items){
+      const o = document.createElement('option');
+      o.value = p.sku;
+      o.textContent = p.in_stock ? p.name + ' (in stock)' : p.name + ' (sold out)';
+      if(p.in_stock) o.disabled = true;
+      if(want && want.toLowerCase() === p.sku.toLowerCase() && !p.in_stock) o.selected = true;
+      sel.appendChild(o);
+    }
+  } catch(e){
+    $('sku').innerHTML = '<option value="">Could not load products</option>';
+    show('We could not load the product list. Please refresh and try again.', 'bad');
+  }
+  resize();
+}
+
+f.addEventListener('submit', async e => {
+  e.preventDefault();
+  show('', ''); msg.className = 'msg';
+  const email = $('email').value.trim(), sku = $('sku').value;
+  if(!sku) return show('Please choose a product.', 'bad');
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return show('Please enter a valid email address.', 'bad');
+  go.disabled = true; go.textContent = 'Saving…';
+  try {
+    const r = await fetch('/api/requests', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({email, sku})});
+    const d = await r.json().catch(()=>({}));
+    if(r.ok){
+      f.hidden = true; $('done').hidden = false;
+      $('doneTitle').textContent = d.status === 'in_stock' ? 'Good news, it\'s in stock' :
+                                   d.status === 'already_requested' ? 'You\'re already on the list' : 'You\'re on the list';
+      $('doneText').textContent = d.status === 'in_stock' ? 'This item is available right now, so no alert is needed.' :
+        'We\'ll email ' + email + ' as soon as it\'s back. You\'ll only hear from us once.';
+    } else show(d.error || 'Something went wrong. Please try again.', 'bad');
+  } catch(err){ show('Network problem. Please check your connection and try again.', 'bad'); }
+  go.disabled = false; go.textContent = 'Notify me'; resize();
+});
+$('again').onclick = () => { $('done').hidden = true; f.hidden = false; $('sku').value=''; resize(); };
+load();
+new ResizeObserver(resize).observe(document.body);
+</script>
+</body>
+</html>
