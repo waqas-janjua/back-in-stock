@@ -11,6 +11,15 @@ using Microsoft.EntityFrameworkCore;
 
 LoadEnvFile(Environment.GetEnvironmentVariable("ENV_FILE") ?? ".env.local");
 
+string[] required = ["STOCK_API_URL", "STOCK_API_KEY", "RESEND_API_KEY", "RESEND_BASE_URL", "WEBHOOK_SECRET", "ADMIN_PASSWORD"];
+var missing = required.Where(n => string.IsNullOrEmpty(Environment.GetEnvironmentVariable(n))).ToArray();
+if (missing.Length > 0)
+{
+    Console.Error.WriteLine($"Cannot start: missing required environment variable(s): {string.Join(", ", missing)}");
+    Console.Error.WriteLine("Pass them with -e NAME=value or --env-file <file> (see README).");
+    Environment.Exit(1);
+}
+
 var builder = WebApplication.CreateBuilder(args);
 
 var settings = new AppSettings
